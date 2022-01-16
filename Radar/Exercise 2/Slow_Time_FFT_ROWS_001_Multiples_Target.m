@@ -21,8 +21,10 @@ radialVelocity = [ ...
     linspace(-200,200,5) ...
     linspace(-200,200,5)
     ]; % km/h
+% radialVelocity = 200;
 radialVelocity = kmph2mps(radialVelocity);  % m/s
 expectedRadialDistance = 2500;  % m
+% targetRadialDistance = 2000;
 targetRadialDistance = [ ...
     linspace(500,500,5) ...
     linspace(1000,1000,5) ...
@@ -59,28 +61,19 @@ expectedDelaySamples = round(expectedDelayTime*samplingRate);
 
 chirpTimeAxis = linspace(0, chirpDuration, chirpDuration*samplingRate);
 timeAxis = linspace(0, pulseDuration, pulseDuration*samplingRate);
-% 0 (zero) here is because we are working in base band.
-% transmittedChirp = exp(1j*2*pi*0*chirpTimeAxis).*exp(1j*pi*chirpSlope* ...
-%     chirpTimeAxis.^2);
-
-% receivedChirp = exp(-1j*pi*2*dopplerEffect*chirpTimeAxis).*...
-%     exp(1j*pi*chirpSlope*(1-dopplerRatio)*chirpTimeAxis.^2);  % Eq. 9.23
-
-% Received signal
-% receivedChirp = exp(1j*2*pi*(carrierFrequency+dopplerEffect).*chirpTimeAxis).*exp(1j*pi*chirpSlope*(1+dopplerRatio).*chirpTimeAxis.^2);
 
 range2freq = @(distance) 2*chirpSlope*distance/speedOfLight;
 
 % referenceSignal = transmittedChirp(expectedDelaySamples+1: ...
 %     samplesInFastTime+expectedDelaySamples);
 
-transmittedChirp = [exp(1j*2*pi*(carrierFrequency).*(chirpTimeAxis)).*...
-        exp(1j*pi*chirpSlope*(1).*(chirpTimeAxis).^2) ...
-        zeros(1, round((pulseDuration-chirpDuration)*samplingRate))];
+transmittedChirp = exp(1j*2*pi*(carrierFrequency).*(chirpTimeAxis)).*...
+        exp(1j*pi*chirpSlope*(1).*(chirpTimeAxis).^2);
     
 transmittedPulse = [transmittedChirp zeros(1, round((pulseDuration- ...
     chirpDuration)*samplingRate))];
-referenceSignal = transmittedChirp(expectedDelaySamples+1: ...
+
+referenceSignal = transmittedPulse(expectedDelaySamples+1: ...
     samplesInFastTime+expectedDelaySamples);
 
 % Generating received pulses and dechirp process (in fast-time x slow-time
@@ -96,42 +89,7 @@ dopplerRatio = zeros(1,length(targetRadialDistance));
 for pulse = 1:numberOfPulses
     
     for n = 1:1:length(targetRadialDistance)
-        
-        dopplerEffect(n) = carrierFrequency*2*radialVelocity(n)/speedOfLight;
-        dopplerRatio(n) = dopplerEffect(n)/carrierFrequency;
-        
-        radialDistanceCorrected(n,pulse) = targetRadialDistance(n) + ((pulse-1)* ...
-            radialVelocity(n)*pulseDuration);
-        receiverDelaySample = round(2*samplingRate*radialDistanceCorrected(n,pulse)/ ...
-            speedOfLight);
-
-        tau = (2*radialDistanceCorrected(n,pulse))/speedOfLight;
-        tauTimeAxis = linspace(chirpDuration,chirpDuration+tau,round(tau*samplingRate));
-        receivedPulseTau = exp(1j*2*pi*(carrierFrequency.*(tauTimeAxis-tau)-dopplerEffect(n).*dopplerRatio(n).*tauTimeAxis)).*...
-        exp(1j*pi*chirpSlope.*(tauTimeAxis-tau-(dopplerRatio(n)/2).*tauTimeAxis).^2);
-
-        receivedPulseTemp(n,:) = [exp(1j*2*pi*(carrierFrequency.*(chirpTimeAxis-tau)-dopplerEffect(n).*dopplerRatio(n).*chirpTimeAxis)).*...
-        exp(1j*pi*chirpSlope.*(chirpTimeAxis-tau-(dopplerRatio(n)/2).*chirpTimeAxis).^2) ...
-            zeros(1, round((pulseDuration-chirpDuration)*samplingRate))];
- 
-        lengthPulse = receiverDelaySample + ...
-            length(receivedPulseTemp(n,receiverDelaySample:(round(chirpDuration*samplingRate)))) + ...
-            length(receivedPulseTau) + ...
-            round((pulseDuration-chirpDuration)*samplingRate)-receiverDelaySample;
-            
-        if(lengthPulse > length(receivedPulseTemp(n,:)))
-            receivedPulseTemp(n,:) = [zeros(1, receiverDelaySample) ...
-                receivedPulseTemp(n,receiverDelaySample:(round(chirpDuration*samplingRate))) ...
-                receivedPulseTau ...
-                zeros(1, round((pulseDuration-chirpDuration)*samplingRate)-...
-                receiverDelaySample-1)];
-        else
-            receivedPulseTemp(n,:) = [zeros(1, receiverDelaySample) ...
-                receivedPulseTemp(n,receiverDelaySample:(round(chirpDuration*samplingRate))) ...
-                receivedPulseTau ...
-                zeros(1, round((pulseDuration-chirpDuration)*samplingRate)-...
-                receiverDelaySample)];
-        end
+        receivedPulseTemp(n,:) = receivedSignal(pulse,carrierFrequency,chirpSlope,pulseDuration,chirpDuration,radialVelocity(n),targetRadialDistance(n),speedOfLight,samplingRate);
     end
     
     receivedPulse = sum(receivedPulseTemp,1);
@@ -141,7 +99,7 @@ for pulse = 1:numberOfPulses
     if (pulse==numberOfPulses)
         figure
 %         plot(timeAxis(1:length(referenceSignal)), real(referenceSignal)), grid on
-        plot(timeAxis(1:length(transmittedChirp)), real(transmittedChirp)), grid on
+        plot(timeAxis(1:length(transmittedPulse)), real(transmittedPulse)), grid on
         xlabel('Time [s]', 'interpreter', 'latex')
         ylabel('Amplitude', 'interpreter', 'latex')
         title('Reference Signal', 'interpreter', 'latex')
@@ -155,7 +113,7 @@ for pulse = 1:numberOfPulses
         ylabel('Amplitude', 'interpreter', 'latex')
         title('Received Signal', 'interpreter', 'latex')
         
-        referenceSpectrum = fftshift(fft(transmittedChirp, timeFFTLength));
+        referenceSpectrum = fftshift(fft(transmittedPulse, timeFFTLength));
         referenceFFT = referenceSpectrum(timeFFTLength/2+1:end);
         receivedSpectrum = fftshift(fft(receivedPulse, timeFFTLength));
         receivedFFT = receivedSpectrum(timeFFTLength/2+1:end);
@@ -277,15 +235,53 @@ xlabel('Velocity [km/h]', 'interpreter', 'latex')
 ylabel('Power [dB]', 'interpreter', 'latex')
 title('Slow-time DFT', 'interpreter', 'latex')
 
-function noisySignal = add_noise(inputSignal, signalToNoiseRatio)
-    % Adds white Gaussian noise to the signal, adjuted by the SNR (Signal
-    % to Noise Ratio).
-    signalPower = mean(abs(inputSignal).^2);
-    misadjustedNoise = randn(size(inputSignal));
-    adjustedNoise = sqrt(signalPower*10^(-.1*signalToNoiseRatio) / ...
-        mean(abs(misadjustedNoise).^2))*misadjustedNoise;
-    noisySignal = inputSignal + adjustedNoise;
-end
+% function noisySignal = add_noise(inputSignal, signalToNoiseRatio)
+%     % Adds white Gaussian noise to the signal, adjuted by the SNR (Signal
+%     % to Noise Ratio).
+%     signalPower = mean(abs(inputSignal).^2);
+%     misadjustedNoise = randn(size(inputSignal));
+%     adjustedNoise = sqrt(signalPower*10^(-.1*signalToNoiseRatio) / ...
+%         mean(abs(misadjustedNoise).^2))*misadjustedNoise;
+%     noisySignal = inputSignal + adjustedNoise;
+% end
 
+function receivedPulse = receivedSignal(pulse,carrierFrequency,chirpSlope,pulseDuration,chirpDuration,radialVelocity,targetRadialDistance,speedOfLight,samplingRate)
+    dopplerEffect = carrierFrequency*2*radialVelocity/speedOfLight;
+    dopplerRatio = dopplerEffect/carrierFrequency;
+
+    radialDistanceCorrected = targetRadialDistance + ((pulse-1)* ...
+        radialVelocity*pulseDuration);
+    receiverDelaySample = round(2*samplingRate*radialDistanceCorrected/ ...
+        speedOfLight);
+
+    tau = (2*radialDistanceCorrected)/speedOfLight;
+
+    chirpTimeAxis = linspace(0, chirpDuration, round((chirpDuration)*samplingRate));
+    receivedPulse = exp(1j*2*pi*(carrierFrequency.*(chirpTimeAxis-tau)-dopplerEffect.*dopplerRatio.*chirpTimeAxis)).*...
+    exp(1j*pi*chirpSlope.*(chirpTimeAxis-tau-(dopplerRatio).*chirpTimeAxis).^2);
+
+    tauTimeAxis = linspace(chirpDuration,chirpDuration+tau,round(tau*samplingRate));
+    receivedPulseTau = exp(1j*2*pi*(carrierFrequency.*(tauTimeAxis-tau)-dopplerEffect.*dopplerRatio.*tauTimeAxis)).*...
+    exp(1j*pi*chirpSlope.*(tauTimeAxis-tau-(dopplerRatio).*tauTimeAxis).^2);
+
+    lengthPulse = receiverDelaySample + ...
+        length(receivedPulse(receiverDelaySample:end)) + ...
+        length(receivedPulseTau) + ...
+        round((pulseDuration-chirpDuration)*samplingRate)-receiverDelaySample;
+
+    if(lengthPulse > length(receivedPulse))
+        receivedPulse = [zeros(1, receiverDelaySample) ...
+            receivedPulse(receiverDelaySample:end) ...
+            receivedPulseTau ...
+            zeros(1, round((pulseDuration-chirpDuration)*samplingRate)-...
+            receiverDelaySample-1)];
+    else
+        receivedPulse = [zeros(1, receiverDelaySample) ...
+            receivedPulse(receiverDelaySample:end) ...
+            receivedPulseTau ...
+            zeros(1, round((pulseDuration-chirpDuration)*samplingRate)-...
+            receiverDelaySample)];
+    end
+end
 
 % EoF
