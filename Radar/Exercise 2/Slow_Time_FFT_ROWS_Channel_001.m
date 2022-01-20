@@ -17,7 +17,7 @@ bandWidth = 500*1e6;  % Hz
 kmph2mps = @(kmphSpeed) kmphSpeed/3.6;
 mps2kmph = @(mpsSpeed) mpsSpeed*3.6;
 radialVelocity = kmph2mps(200);  % m/s
-expectedRadialDistance = 500;  % m
+expectedRadialDistance = 1000;  % m
 targetRadialDistance = 300;  % m
 speedOfLight = 299792458;  % m/s
 rangeSwath = 20;  % m
@@ -25,38 +25,54 @@ numberOfPulses = 128;
 fastTimeFFTLength = 2^10;
 slowTimeFFTLength = 2^9;
 timeFFTLength = 2^6;
+% timeFFTLength = 2^25;
 % signalToNoiseRatio = -13.5;  % dB
 signalToNoiseRatio = 2^20;  % dB
 
 %% Pre Calculations:
 pulseRepetitionFrequency = 1/pulseDuration;
+waveLength = speedOfLight/carrierFrequency;
 chirpDuration = dutyCycle*pulseDuration;
 chirpSlope = bandWidth/chirpDuration;
 rangeResolution = speedOfLight/(2*bandWidth);
 samplesInFastTime = round(rangeSwath/rangeResolution);
 % samplingRate = 2*bandWidth*1.5;
-% samplingRate = 9*1e11;
 samplingRate = 9*1e8;
+% samplingRate = 1*1e11;
 dopplerEffect = carrierFrequency*2*radialVelocity/speedOfLight;
 dopplerRatio = dopplerEffect/carrierFrequency;
 expectedDelayTime = 2*expectedRadialDistance/speedOfLight;
 expectedDelaySamples = round(expectedDelayTime*samplingRate);
+maximumRadialVelocity = waveLength/(4*pulseDuration);
+
+assert(maximumRadialVelocity > abs(radialVelocity), ['The chosen ', ...
+    'radial velocity is greater in magnitude than the maximum radial', ...
+    'velocity. Decrease the radial velocity in magnitude.'])
+
+if pulseRepetitionFrequency/2 < dopplerEffect
+    warning(['The Doppler frequency is out of bounds. ', ...
+        'Reduce pulse duration or radial velocity.'])
+end
 
 %% Transmitted Signal
+
 timeAxis = linspace(0, pulseDuration, pulseDuration*samplingRate);
-
 range2freq = @(distance) 2*chirpSlope*distance/speedOfLight;
-
 signalPulse = exp(1j*2*pi*(carrierFrequency).*(timeAxis)).*...
         exp(1j*pi*chirpSlope.*(timeAxis).^2);
+    
+assert(length(signalPulse) == length(timeAxis), ['The len', ...
+    'gth of the transmitted pulse is not correct.'])
 
 transmittedChirp = signalPulse(1:round(chirpDuration*samplingRate));
 
 transmittedPulse = [transmittedChirp zeros(1, round((pulseDuration- ...
     chirpDuration)*samplingRate))];
-
 referenceSignal = transmittedPulse(expectedDelaySamples+1: ...
     samplesInFastTime+expectedDelaySamples);
+
+assert(length(referenceSignal) == samplesInFastTime, ['Length of the ', ...
+    'referece signal is not correct.'])
 
 %% Generating received pulses and dechirp process 
 % (in fast-time x slow-time matrix)
@@ -69,21 +85,23 @@ for pulse = 1:numberOfPulses
     receiverDelaySample = round(2*samplingRate*radialDistanceCorrected(pulse)/ ...
         speedOfLight);
     
-    tau = (2*radialDistanceCorrected(pulse))/speedOfLight;
-    
+    tau = (2*radialDistanceCorrected(pulse))/speedOfLight;    
     tauTimeAxis = linspace(0,chirpDuration+tau,round((chirpDuration+tau)*samplingRate));
     
     % Radar Channel
     channelTau = exp(1j.*pi.*(-2.*carrierFrequency.*tau-2.*dopplerEffect.*tauTimeAxis+chirpSlope.*((tauTimeAxis.^2).*((1-dopplerRatio).^2-1)+(tau.^2)-2.*tau.*tauTimeAxis.*(1-dopplerRatio))));
+    
+    assert(length(channelTau) == length(tauTimeAxis), ['Incor', ...
+        'rect length for channel pulse.'])
 
     % Received Signal
     receivedPulse = channelTau.*signalPulse(1:round((chirpDuration+tau)*samplingRate));
-
     receivedPulse = [zeros(1, receiverDelaySample) ...
         receivedPulse(receiverDelaySample:end) ...
         zeros(1, round((pulseDuration-chirpDuration-tau)*samplingRate)-...
         receiverDelaySample)];
     
+    % Noise addition
     receivedPulse = awgn(receivedPulse,signalToNoiseRatio);
     
     % Plots begin
@@ -157,18 +175,23 @@ freq2range = @(freq) freq*speedOfLight/(2*chirpSlope);
 rangeAxis = freq2range(fastFreqAxis);
 [maxValueFastTime, indexFastTime] = max(integratedPulses);
 
+fprintf("Range result: %.4f m.\n", rangeAxis(indexFastTime))
+textDistance = {['Distance: ' num2str(rangeAxis(indexFastTime)) ' m.']};
+
 %% Slow-time processing
+
+% lambda = speedOfLight/carrierFrequency;
+% Vmax = lambda/(4*pulseDuration);
+lambda = waveLength;
+Vmax = maximumRadialVelocity;
+deltaV = lambda/(2*pulseDuration*numberOfPulses);
+freqMax = 2*Vmax*carrierFrequency/speedOfLight;
+% velocityAxisX = linspace(-Vmax,Vmax,numberOfPulses);
 
 fastSlowMatrix2 = zeros(fastTimeFFTLength/2,slowTimeFFTLength);
 for k = 1:1:length(fastSlowMatrix)
     fastSlowMatrix2(k,:) = fftshift(fft(fastSlowMatrix(k,:), slowTimeFFTLength));
 end
-
-lambda = speedOfLight/carrierFrequency;
-Vmax = lambda/(4*pulseDuration);
-% Vmax = lambda/(4*chirpDuration);
-deltaV = lambda/(2*pulseDuration*numberOfPulses);
-velocityAxisX = linspace(-Vmax,Vmax,numberOfPulses);
 
 dopplerAnalysis = fastSlowMatrix(indexFastTime, :).';
 slowTimeSpectrum = periodogram(dopplerAnalysis, [], ...
@@ -185,6 +208,16 @@ end
 freq2velocity = @(freq) (freq*speedOfLight/(2*carrierFrequency)).*(1 - ...
     freq/(2*carrierFrequency));
 velocityAxis = mps2kmph(freq2velocity(slowFreqAxis));
+[~, indexSlowTime] = max(abs(slowTimeSpectrum));
+
+fprintf("Velocity result: %.4f km/h.\n", velocityAxis(indexSlowTime))
+textVelocity = {['Velocity: ' num2str(velocityAxis(indexSlowTime)) 'km/h.']};
+
+% freq2velocity = @(freq) freq;
+% velocityAxis = freq2velocity(slowFreqAxis);
+
+% v = freq*c/(2*fc)
+% freq = 2*v*fc/c
 
 %% Plotting
 
