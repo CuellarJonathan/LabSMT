@@ -19,11 +19,11 @@ kmph2mps = @(kmphSpeed) kmphSpeed/3.6;
 mps2kmph = @(mpsSpeed) mpsSpeed*3.6;
 
 targetRadialDistance_x = 100; % m % Vehicle towards distance
-targetRadialDistance_y = 100; % m % Vehicle lateral distance
+targetRadialDistance_y = 0; % m % Vehicle lateral distance
 
 angle_target = rad2deg(atan2(targetRadialDistance_y,targetRadialDistance_x));
 
-radialVelocity_x = kmph2mps(100); % m/s % Vehicle towards velocity
+radialVelocity_x = kmph2mps(50); % m/s % Vehicle towards velocity
 radialVelocity_y = kmph2mps(0); % m/s % Vehicle lateral velocity
 
 radialVelocity = hypot(radialVelocity_x,radialVelocity_y);
@@ -43,7 +43,8 @@ fastTimeFFTLength = 2^10;
 slowTimeFFTLength = numberOfPulses;
 timeFFTLength = 2^6;
 % timeFFTLength = 2^25;
-signalToNoiseRatio = -27;  % dB
+% signalToNoiseRatio = -27;  % dB
+signalToNoiseRatio = -13.5;  % dB
 % signalToNoiseRatio = 2^20;  % dB
 
 %% Pre Calculations:
@@ -282,7 +283,12 @@ for mt = 1:1:Mt
     
 end
 
-fprintf('Target Angle: %dº \n', angle_target)
+[maxRange, indexRange] = max(abs(fastSlowMatrixTemp3));
+[maxRange2, indexRange2] = max(maxRange);
+
+fprintf('\n')
+fprintf('Estimated Range Result: %.4f m \n', rangeAxis(indexRange(indexRange2)))
+fprintf('Estimated Velocity Result:  %.4f km/h \n', velocityAxis(indexRange2))
 
 %% Plotting
 
@@ -332,12 +338,12 @@ title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
 % ylabel('Power [dB]', 'interpreter', 'latex')
 % title('Slow-time DFT', 'interpreter', 'latex')
 
-figure
-% plot(real(angleAxis), 10*log10(slowTimeSpectrum2(1,:,:))), grid on
-plot(real(angleAxis), (slowTimeSpectrum2(1,:,:))), grid on
-xlabel('Angle [Degrees]', 'interpreter', 'latex')
-ylabel('Power [dB]', 'interpreter', 'latex')
-title('Angle Slow-time DFT', 'interpreter', 'latex')
+% figure
+% % plot(real(angleAxis), 10*log10(slowTimeSpectrum2(1,:,:))), grid on
+% plot(real(angleAxis), (slowTimeSpectrum2(1,:,:))), grid on
+% xlabel('Angle [Degrees]', 'interpreter', 'latex')
+% ylabel('Power [dB]', 'interpreter', 'latex')
+% title('Angle Slow-time DFT', 'interpreter', 'latex')
 
 %% Functions
 
