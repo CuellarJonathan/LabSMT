@@ -11,22 +11,30 @@ close all
 %% Definitions
 
 Mt = 1; % Transmitter number
-Mr = 10; % Receiver number
+Mr = 5; % Receiver number
 d_antennas_t = 0.1; % m % Transmitter antennas distance
 d_antennas_r = 0.1; % m % Receiver antennas distance
 
 kmph2mps = @(kmphSpeed) kmphSpeed/3.6;
 mps2kmph = @(mpsSpeed) mpsSpeed*3.6;
 
-targetRadialDistance_x = 100; % m % Vehicle towards distance
-targetRadialDistance_y = 0; % m % Vehicle lateral distance
+targetRadialDistance_y = 100; % m % Vehicle towards distance
+targetRadialDistance_x = 200; % m % Vehicle lateral distance
+% targetRadialDistance_x = 57.735; % m % Vehicle lateral distance
 
-angle_target = rad2deg(atan2(targetRadialDistance_y,targetRadialDistance_x));
+angle_target_rad = atan2(targetRadialDistance_y,targetRadialDistance_x);
+angle_target = rad2deg(angle_target_rad);
 
-radialVelocity_x = kmph2mps(50); % m/s % Vehicle towards velocity
-radialVelocity_y = kmph2mps(0); % m/s % Vehicle lateral velocity
+radialVelocity = kmph2mps(10); % km/h Vehicle velocity
 
-radialVelocity = hypot(radialVelocity_x,radialVelocity_y);
+radialVelocity_y = radialVelocity*sin(angle_target_rad); % m/s % Vehicle towards velocity
+radialVelocity_x = radialVelocity*cos(angle_target_rad); % m/s % Vehicle lateral velocity
+
+% angle_velocity_rad = atan2(radialVelocity_y,radialVelocity_x);
+
+% signalV = radialVelocity_x/abs(radialVelocity_x);
+
+% radialVelocity = signalV*hypot(radialVelocity_x,radialVelocity_y);
 
 pulseDuration = 40*1e-6;  % Seconds
 dutyCycle = .5;
@@ -120,8 +128,8 @@ for pulse = 1:numberOfPulses
             radialDistanceCorrected_r_y = targetRadialDistance_y - pos_r(mr) + (((pulse-1)*Mt+mt-1)* ...
                 radialVelocity_y*pulseDuration);
 
-            radialDistanceCorrected_t = hypot(radialDistanceCorrected_x,radialDistanceCorrected_t_y);
-            radialDistanceCorrected_r = hypot(radialDistanceCorrected_x,radialDistanceCorrected_r_y);
+            radialDistanceCorrected_t = hypot(radialDistanceCorrected_t_y,radialDistanceCorrected_x);
+            radialDistanceCorrected_r = hypot(radialDistanceCorrected_r_y,radialDistanceCorrected_x);
 
             radialDistanceCorrected = radialDistanceCorrected_t+radialDistanceCorrected_r;
             
@@ -256,7 +264,8 @@ for mt = 1:1:Mt
     for k = 1:1:fastTimeFFTLength/2
         for i = 1:1:slowTimeFFTLength
             fastSlowMatrix3(mt,:,k,i) = fftshift(fft(fastSlowMatrix2(mt,:,k,i), Mr));
-            fastSlowMatrix4(mt,k,i) = sum(fastSlowMatrix3(mt,:,k,i).^2);
+%             fastSlowMatrix4(mt,k,i) = sqrt(sum(fastSlowMatrix3(mt,:,k,i).^2))/Mr;
+            fastSlowMatrix4(mt,k,i) = (sum(fastSlowMatrix3(mt,:,k,i).^2));
         end
     end
     
@@ -300,28 +309,38 @@ fprintf('Estimated Velocity Result:  %.4f km/h \n', velocityAxis(indexRange2))
 % xlim([0 (numberOfPulses-1)*pulseDuration])
 % ylabel('Range [$m$]', 'interpreter', 'latex')
 % title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
+% set(groot,'DefaultAxesTickLabelInterpreter','Tex');
+% set(gca,'TickLabelInterpreter','latex')
 
 figure
 mesh(velocityAxis, rangeAxis, ...
-    abs(fastSlowMatrixTemp2), 'FaceColor', 'flat')
+    (abs(fastSlowMatrixTemp2)), 'FaceColor', 'flat')
 view(2)
+c = colorbar('TickLabelInterpreter','latex');
+c.Label.String = 'Axis';
+c.Label.Interpreter = 'latex';
 xlabel('Velocity [$km/h$]', 'interpreter', 'latex')
 xlim([min(velocityAxis) max(velocityAxis)])
 ylabel('Range [$m$]', 'interpreter', 'latex')
 ylim([0 expectedRadialDistance+1])
 title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
+set(groot,'DefaultAxesTickLabelInterpreter','latex');
+set(gca,'TickLabelInterpreter','latex')
 
 figure
 mesh(velocityAxis, rangeAxis, ...
     abs(fastSlowMatrixTemp3), 'FaceColor', 'flat')
 view(2)
-c = colorbar;
+c = colorbar('TickLabelInterpreter','latex');
 c.Label.String = 'Axis';
+% c.Label.Interpreter = 'latex';
 xlabel('Velocity [$km/h$]', 'interpreter', 'latex')
 xlim([min(velocityAxis) max(velocityAxis)])
 ylabel('Range [$m$]', 'interpreter', 'latex')
 ylim([0 expectedRadialDistance+1])
-title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
+title(['Fast-time vs. slow-time - Multiple Antennas (Mr = ' num2str(Mr) ')'], 'interpreter', 'latex')
+set(groot,'DefaultAxesTickLabelInterpreter','latex');
+set(gca,'TickLabelInterpreter','latex')
 
 % figure
 % plot(rangeAxis, 10*log10(integratedPulses)), hold on
@@ -331,12 +350,16 @@ title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
 % ylabel('Power [dB]', 'interpreter', 'latex')
 % title(['Fast-time using noncoherent integration of $', ...
 %     num2str(numberOfPulses), '$ pulses.'], 'interpreter', 'latex')
+% set(groot,'DefaultAxesTickLabelInterpreter','Tex');
+% set(gca,'TickLabelInterpreter','latex')
 
 % figure
 % plot(velocityAxis, 10*log10(slowTimeSpectrum)), grid on
 % xlabel('Velocity [km/h]', 'interpreter', 'latex')
 % ylabel('Power [dB]', 'interpreter', 'latex')
 % title('Slow-time DFT', 'interpreter', 'latex')
+% set(groot,'DefaultAxesTickLabelInterpreter','Tex');
+% set(gca,'TickLabelInterpreter','latex')
 
 % figure
 % % plot(real(angleAxis), 10*log10(slowTimeSpectrum2(1,:,:))), grid on
@@ -344,6 +367,8 @@ title('Fast-time vs. slow-time matrix', 'interpreter', 'latex')
 % xlabel('Angle [Degrees]', 'interpreter', 'latex')
 % ylabel('Power [dB]', 'interpreter', 'latex')
 % title('Angle Slow-time DFT', 'interpreter', 'latex')
+% set(groot,'DefaultAxesTickLabelInterpreter','Tex');
+% set(gca,'TickLabelInterpreter','latex')
 
 %% Functions
 
